@@ -1,24 +1,9 @@
+use reach::{Each, InputMode};
+
 use clap::Clap;
+use num_cpus;
+use std::io;
 use std::path::PathBuf;
-use std::str::FromStr;
-
-#[derive(Debug)]
-enum ArgMode {
-    Stdin,
-    Filename,
-}
-
-impl FromStr for ArgMode {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "stdin" => Ok(ArgMode::Stdin),
-            "filename" => Ok(ArgMode::Filename),
-            _ => Err(format!("No such ArgMode: {}", s)),
-        }
-    }
-}
 
 #[derive(Clap, Debug)]
 #[clap(version = "0.1", author = "Jonathan M. Lange <jml@mumak.net>")]
@@ -63,7 +48,7 @@ struct Opts {
         long,
         about = "The number of child processes to run in parallel"
     )]
-    processes: Option<u32>,
+    processes: Option<usize>,
 
     #[clap(
         long,
@@ -73,10 +58,35 @@ struct Opts {
                  The default is to use stdin unless '{}' is present in the command.",
         possible_values = &["stdin", "filename"],
     )]
-    input_mode: Option<ArgMode>,
+    input_mode: Option<InputMode>,
 }
 
-fn main() {
+fn main() -> Result<(), io::Error> {
     let opts: Opts = Opts::parse();
-    println!("Opts: {:?}", opts);
+    // TODO: Nicer error for invalid file name
+    let source = opts.source.canonicalize()?;
+    let destination = match opts.destination {
+        Some(p) => p,
+        None => {
+            // TODO: Write a test for this bit.
+            // TODO: Nicer error for invalid file name.
+            let mut file_name = source.file_name().unwrap().to_owned();
+            file_name.push("-results");
+            let mut dest = source.clone();
+            dest.set_file_name(file_name);
+            dest
+        }
+    };
+    let processes = opts.processes.unwrap_or(num_cpus::get());
+    let each = Each::new(
+        opts.source,
+        opts.command,
+        destination,
+        processes,
+        opts.recreate,
+        opts.retries,
+        opts.shell,
+    );
+    println!("Opts: {:?}", each);
+    Ok(())
 }
