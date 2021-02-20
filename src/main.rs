@@ -78,6 +78,7 @@ async fn main() -> Result<(), io::Error> {
             dest
         }
     };
+    // TODO(jml): Use shellexpand on input directories
     let num_processes = opts.processes.unwrap_or(num_cpus::get());
     let each = Each::new(
         opts.source,
