@@ -50,13 +50,18 @@ impl Each {
         // running each command and waiting for each command. Need instead to
         // run things in parallel.
         let mut source_dir = fs::read_dir(self.source_dir).await?;
-        while let Some(child) = source_dir.next_entry().await? {
-            let metadata = child.metadata().await?;
+        while let Some(source_file) = source_dir.next_entry().await? {
+            let metadata = source_file.metadata().await?;
             if metadata.is_file() {
                 // TODO(jml): Either format the command or pass stdin.
+                let path = source_file.path();
+                // TODO(jml): Understand whether this actually has any benefit over directly opening the standard file.
+                let async_file = fs::File::open(path).await?;
+                let std_file = async_file.into_std().await;
                 let mut child_process = Command::new(&self.shell)
                     .arg("-c")
                     .arg(&self.command)
+                    .stdin(std_file)
                     .spawn()?;
                 child_process.wait().await?;
             }
