@@ -45,7 +45,10 @@ impl Each {
     pub async fn run(self) -> io::Result<()> {
         let mut source_dir = fs::read_dir(self.source_dir).await?;
         while let Some(child) = source_dir.next_entry().await? {
-            println!("{:?}", child.path());
+            let metadata = child.metadata().await?;
+            if metadata.is_file() {
+                println!("{:?}", child.path());
+            }
         }
         Ok(())
     }
