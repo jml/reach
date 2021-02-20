@@ -61,7 +61,8 @@ struct Opts {
     input_mode: Option<InputMode>,
 }
 
-fn main() -> Result<(), io::Error> {
+#[tokio::main]
+async fn main() -> Result<(), io::Error> {
     let opts: Opts = Opts::parse();
     // TODO: Nicer error for invalid file name
     let source = opts.source.canonicalize()?;
