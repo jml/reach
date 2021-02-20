@@ -9,9 +9,6 @@ pub struct Each {
     source_dir: PathBuf,
     command: String,
     destination_dir: PathBuf,
-    num_processes: usize,
-    recreate: bool,
-    retries: u32,
     shell: String,
 }
 
@@ -27,18 +24,15 @@ impl Each {
         source_dir: PathBuf,
         command: String,
         destination_dir: PathBuf,
-        num_processes: usize,
-        recreate: bool,
-        retries: u32,
+        _num_processes: usize,
+        _recreate: bool,
+        _retries: u32,
         shell: String,
     ) -> Self {
         Each {
             source_dir,
             command,
             destination_dir,
-            num_processes,
-            recreate,
-            retries,
             shell,
         }
     }
