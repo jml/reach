@@ -55,21 +55,18 @@ impl Each {
             if metadata.is_file() {
                 // TODO(jml): Either format the command or pass stdin.
                 let path = source_file.path();
-                println!("path: {:?}", path);
                 // TODO(jml): Understand whether this actually has any benefit over directly opening the standard file.
                 let async_file = fs::File::open(path).await?;
                 let in_file = async_file.into_std().await;
 
                 let mut base_directory = self.destination_dir.clone();
                 base_directory.push(source_file.file_name());
-                println!("creating base directory: {:?}", base_directory);
                 // TODO(jml): Instead of looking before leaping, check the error and only re-raise if file exists.
                 if !base_directory.exists() {
                     // TODO(jml): create_dir_all is probably inefficient,
                     // since we can probably assume that the destination directory exists.
                     fs::create_dir_all(&base_directory).await?;
                 }
-                println!("Base directory created");
                 let mut out_path = base_directory.clone();
                 out_path.push("out");
                 // TODO(jml): 'create' truncates. Actual desired behaviour depends on 'recreate' setting.
