@@ -1,5 +1,7 @@
+use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
+use tokio::fs;
 
 #[derive(Debug)]
 pub struct Each {
@@ -38,6 +40,14 @@ impl Each {
             retries,
             shell,
         }
+    }
+
+    pub async fn run(self) -> io::Result<()> {
+        let mut source_dir = fs::read_dir(self.source_dir).await?;
+        while let Some(child) = source_dir.next_entry().await? {
+            println!("{:?}", child.path());
+        }
+        Ok(())
     }
 }
 
