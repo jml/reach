@@ -2,6 +2,7 @@ use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
 use tokio::fs;
+use tokio::process::Command;
 
 #[derive(Debug)]
 pub struct Each {
@@ -43,11 +44,21 @@ impl Each {
     }
 
     pub async fn run(self) -> io::Result<()> {
+        // TODO(jml): Figure out how to separate 'iterate through files' from 'process files'.
+
+        // TODO(jml): Currently retrieving each file in sequence, and then
+        // running each command and waiting for each command. Need instead to
+        // run things in parallel.
         let mut source_dir = fs::read_dir(self.source_dir).await?;
         while let Some(child) = source_dir.next_entry().await? {
             let metadata = child.metadata().await?;
             if metadata.is_file() {
-                println!("{:?}", child.path());
+                // TODO(jml): Either format the command or pass stdin.
+                let mut child_process = Command::new(&self.shell)
+                    .arg("-c")
+                    .arg(&self.command)
+                    .spawn()?;
+                child_process.wait().await?;
             }
         }
         Ok(())
