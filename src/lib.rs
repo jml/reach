@@ -1,8 +1,10 @@
+use futures::stream::TryStreamExt;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tokio::fs;
 use tokio::process::Command;
+use tokio_stream::wrappers::ReadDirStream;
 
 #[derive(Debug)]
 pub struct Each {
@@ -38,24 +40,24 @@ impl Each {
     }
 
     pub async fn run(&self) -> io::Result<()> {
-        // TODO(jml): Figure out how to separate 'iterate through files' from 'process files'.
-
-        // TODO(jml): Currently retrieving each file in sequence, and then
-        // running each command and waiting for each command. Need instead to
-        // run things in parallel.
-        let mut source_dir = fs::read_dir(&self.source_dir).await?;
-        while let Some(source_file) = source_dir.next_entry().await? {
-            let metadata = source_file.metadata().await?;
-            if metadata.is_file() {
-                run_process(
-                    &source_file,
-                    &self.destination_dir,
-                    &self.shell,
-                    &self.command,
-                )
-                .await?;
-            }
-        }
+        let source_dir = fs::read_dir(&self.source_dir).await?;
+        let stream = ReadDirStream::new(source_dir);
+        stream
+            .try_for_each_concurrent(12, |source_file| async move {
+                let metadata = source_file.metadata().await?;
+                if metadata.is_file() {
+                    run_process(
+                        &source_file,
+                        &self.destination_dir,
+                        &self.shell,
+                        &self.command,
+                    )
+                    .await
+                } else {
+                    Ok(())
+                }
+            })
+            .await?;
         Ok(())
     }
 }
