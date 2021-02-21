@@ -70,6 +70,9 @@ async fn run_process(
     shell: &str,
     command: &str,
 ) -> io::Result<()> {
+    // TODO(jml): This function has potential for internal parallelism.
+    // Better understand how join! and .await work and see if there's any benefit.
+
     // TODO(jml): Understand whether this actually has any benefit over directly opening the standard file.
     let source_path = source_file.path();
     let in_file = fs::File::open(source_path).await?.into_std().await;
@@ -78,11 +81,12 @@ async fn run_process(
     base_directory.push(source_file.file_name());
 
     ensure_directory(&base_directory).await?;
-    let mut out_path = base_directory.clone();
-    out_path.push("out");
 
     // TODO(jml): 'create' truncates. Actual desired behaviour depends on 'recreate' setting.
+    let mut out_path = base_directory.clone();
+    out_path.push("out");
     let out_file = fs::File::create(out_path).await?.into_std().await;
+
     let mut err_path = base_directory.clone();
     err_path.push("err");
     let err_file = fs::File::create(err_path).await?.into_std().await;
