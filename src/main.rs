@@ -104,13 +104,13 @@ async fn main() -> Result<(), io::Error> {
     });
     let num_processes = opts.processes.unwrap_or(num_cpus::get());
     let each = Each::new(
+        opts.shell,
         opts.command,
         opts.source,
         destination,
         num_processes,
         opts.recreate,
         opts.retries,
-        opts.shell,
     );
     each.run().await
 }

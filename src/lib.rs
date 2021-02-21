@@ -1,15 +1,18 @@
+use futures::stream::TryStreamExt;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tokio::fs;
 use tokio::process::Command;
+use tokio_stream::wrappers::ReadDirStream;
 
 #[derive(Debug)]
 pub struct Each {
+    shell: String,
     command: String,
     source_dir: PathBuf,
     destination_dir: PathBuf,
-    shell: String,
+    num_processes: usize,
 }
 
 // TODO: Add support for both input modes
@@ -21,41 +24,42 @@ pub struct Each {
 
 impl Each {
     pub fn new(
+        shell: String,
         command: String,
         source_dir: PathBuf,
         destination_dir: PathBuf,
-        _num_processes: usize,
+        num_processes: usize,
         _recreate: bool,
         _retries: u32,
-        shell: String,
     ) -> Self {
         Each {
+            shell,
             command,
             source_dir,
             destination_dir,
-            shell,
+            num_processes,
         }
     }
 
     pub async fn run(&self) -> io::Result<()> {
-        // TODO(jml): Figure out how to separate 'iterate through files' from 'process files'.
-
-        // TODO(jml): Currently retrieving each file in sequence, and then
-        // running each command and waiting for each command. Need instead to
-        // run things in parallel.
-        let mut source_dir = fs::read_dir(&self.source_dir).await?;
-        while let Some(source_file) = source_dir.next_entry().await? {
-            let metadata = source_file.metadata().await?;
-            if metadata.is_file() {
-                run_process(
-                    &source_file,
-                    &self.destination_dir,
-                    &self.shell,
-                    &self.command,
-                )
-                .await?;
-            }
-        }
+        let source_dir = fs::read_dir(&self.source_dir).await?;
+        let stream = ReadDirStream::new(source_dir);
+        stream
+            .try_for_each_concurrent(self.num_processes, |source_file| async move {
+                let metadata = source_file.metadata().await?;
+                if metadata.is_file() {
+                    run_process(
+                        &source_file,
+                        &self.destination_dir,
+                        &self.shell,
+                        &self.command,
+                    )
+                    .await
+                } else {
+                    Ok(())
+                }
+            })
+            .await?;
         Ok(())
     }
 }
@@ -66,6 +70,9 @@ async fn run_process(
     shell: &str,
     command: &str,
 ) -> io::Result<()> {
+    // TODO(jml): This function has potential for internal parallelism.
+    // Better understand how join! and .await work and see if there's any benefit.
+
     // TODO(jml): Understand whether this actually has any benefit over directly opening the standard file.
     let source_path = source_file.path();
     let in_file = fs::File::open(source_path).await?.into_std().await;
@@ -74,11 +81,12 @@ async fn run_process(
     base_directory.push(source_file.file_name());
 
     ensure_directory(&base_directory).await?;
-    let mut out_path = base_directory.clone();
-    out_path.push("out");
 
     // TODO(jml): 'create' truncates. Actual desired behaviour depends on 'recreate' setting.
+    let mut out_path = base_directory.clone();
+    out_path.push("out");
     let out_file = fs::File::create(out_path).await?.into_std().await;
+
     let mut err_path = base_directory.clone();
     err_path.push("err");
     let err_file = fs::File::create(err_path).await?.into_std().await;
