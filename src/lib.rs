@@ -8,10 +8,10 @@ use tokio_stream::wrappers::ReadDirStream;
 
 #[derive(Debug)]
 pub struct Each {
+    shell: String,
     command: String,
     source_dir: PathBuf,
     destination_dir: PathBuf,
-    shell: String,
 }
 
 // TODO: Add support for both input modes
@@ -23,19 +23,19 @@ pub struct Each {
 
 impl Each {
     pub fn new(
+        shell: String,
         command: String,
         source_dir: PathBuf,
         destination_dir: PathBuf,
         _num_processes: usize,
         _recreate: bool,
         _retries: u32,
-        shell: String,
     ) -> Self {
         Each {
+            shell,
             command,
             source_dir,
             destination_dir,
-            shell,
         }
     }
 
