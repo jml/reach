@@ -73,12 +73,7 @@ async fn run_process(
     let mut base_directory = destination_dir.to_path_buf();
     base_directory.push(source_file.file_name());
 
-    // TODO(jml): Instead of looking before leaping, check the error and only re-raise if file exists.
-    if !base_directory.exists() {
-        // TODO(jml): create_dir_all is probably inefficient,
-        // since we can probably assume that the destination directory exists.
-        fs::create_dir_all(&base_directory).await?;
-    }
+    ensure_directory(&base_directory).await?;
     let mut out_path = base_directory.clone();
     out_path.push("out");
 
@@ -114,5 +109,17 @@ impl FromStr for InputMode {
             "filename" => Ok(InputMode::Filename),
             _ => Err(format!("No such InputMode: {}", s)),
         }
+    }
+}
+
+/// Asynchronously ensure a directory exists.
+async fn ensure_directory(p: &Path) -> io::Result<()> {
+    let result = fs::create_dir_all(p).await;
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) => match error.kind() {
+            io::ErrorKind::NotFound => Ok(()),
+            _ => Err(error),
+        },
     }
 }
