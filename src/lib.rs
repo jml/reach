@@ -12,6 +12,7 @@ pub struct Each {
     command: String,
     source_dir: PathBuf,
     destination_dir: PathBuf,
+    num_processes: usize,
 }
 
 // TODO: Add support for both input modes
@@ -27,7 +28,7 @@ impl Each {
         command: String,
         source_dir: PathBuf,
         destination_dir: PathBuf,
-        _num_processes: usize,
+        num_processes: usize,
         _recreate: bool,
         _retries: u32,
     ) -> Self {
@@ -36,6 +37,7 @@ impl Each {
             command,
             source_dir,
             destination_dir,
+            num_processes,
         }
     }
 
@@ -43,7 +45,7 @@ impl Each {
         let source_dir = fs::read_dir(&self.source_dir).await?;
         let stream = ReadDirStream::new(source_dir);
         stream
-            .try_for_each_concurrent(12, |source_file| async move {
+            .try_for_each_concurrent(self.num_processes, |source_file| async move {
                 let metadata = source_file.metadata().await?;
                 if metadata.is_file() {
                     run_process(
