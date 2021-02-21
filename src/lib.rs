@@ -6,8 +6,8 @@ use tokio::process::Command;
 
 #[derive(Debug)]
 pub struct Each {
-    source_dir: PathBuf,
     command: String,
+    source_dir: PathBuf,
     destination_dir: PathBuf,
     shell: String,
 }
@@ -21,8 +21,8 @@ pub struct Each {
 
 impl Each {
     pub fn new(
-        source_dir: PathBuf,
         command: String,
+        source_dir: PathBuf,
         destination_dir: PathBuf,
         _num_processes: usize,
         _recreate: bool,
@@ -30,8 +30,8 @@ impl Each {
         shell: String,
     ) -> Self {
         Each {
-            source_dir,
             command,
+            source_dir,
             destination_dir,
             shell,
         }

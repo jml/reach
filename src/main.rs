@@ -2,23 +2,21 @@ use reach::{Each, InputMode};
 
 use clap::Clap;
 use num_cpus;
+use std::fs;
 use std::io;
 use std::path::PathBuf;
 
 #[derive(Clap, Debug)]
 #[clap(version = "0.1", author = "Jonathan M. Lange <jml@mumak.net>")]
 struct Opts {
-    #[clap(about = "The directory containing source files")]
-    source: PathBuf,
-
     #[clap(about = "The command to run on those source files")]
     command: String,
 
-    #[clap(
-        long,
-        about = "The destination directory. \
-                 Defaults to the name of the input directory with '-results' appended to the end."
-    )]
+    #[clap(about = "The directory containing source files")]
+    source: PathBuf,
+
+    #[clap(about = "The destination directory. \
+                 Defaults to the name of the input directory with '-results' appended to the end.")]
     destination: Option<PathBuf>,
 
     #[clap(
@@ -64,31 +62,55 @@ struct Opts {
 #[tokio::main]
 async fn main() -> Result<(), io::Error> {
     let opts: Opts = Opts::parse();
-    // TODO: Nicer error for invalid file name
-    let source = opts.source.canonicalize()?;
+    let source = opts.source.canonicalize().unwrap_or_else(|error| {
+        clap::Error::with_description(
+            format!("Invalid source directory {:?}: {}", opts.source, error),
+            clap::ErrorKind::Io,
+        )
+        .exit();
+    });
     let destination = match opts.destination {
         Some(p) => p,
         None => {
             // TODO: Write a test for this bit.
-            // TODO: Nicer error for invalid file name.
-            let mut file_name = source.file_name().unwrap().to_owned();
+            let mut file_name = source.file_name().unwrap_or_else(|| {
+                clap::Error::with_description(format!("You must provide an explicit destination directory if source directory is {}", source.to_str().unwrap()), clap::ErrorKind::ValueValidation).exit();
+            }).to_owned();
             file_name.push("-results");
             let mut dest = source.clone();
             dest.set_file_name(file_name);
             dest
         }
     };
-    // TODO(jml): Use shellexpand on input directories
+    let destination = destination.canonicalize().unwrap_or_else(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            fs::create_dir_all(&destination).unwrap_or_else(|error| {
+                clap::Error::with_description(
+                    format!(
+                        "Could not create destination directory {:?}: {}",
+                        destination, error
+                    ),
+                    clap::ErrorKind::Io,
+                );
+            });
+            destination
+        } else {
+            clap::Error::with_description(
+                format!("Invalid destination directory {:?}: {}", destination, error),
+                clap::ErrorKind::Io,
+            )
+            .exit();
+        }
+    });
     let num_processes = opts.processes.unwrap_or(num_cpus::get());
     let each = Each::new(
-        opts.source,
         opts.command,
+        opts.source,
         destination,
         num_processes,
         opts.recreate,
         opts.retries,
         opts.shell,
     );
-    println!("Opts: {:?}", each);
     each.run().await
 }
