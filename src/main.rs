@@ -8,11 +8,11 @@ use std::path::PathBuf;
 #[derive(Clap, Debug)]
 #[clap(version = "0.1", author = "Jonathan M. Lange <jml@mumak.net>")]
 struct Opts {
-    #[clap(about = "The directory containing source files")]
-    source: PathBuf,
-
     #[clap(about = "The command to run on those source files")]
     command: String,
+
+    #[clap(about = "The directory containing source files")]
+    source: PathBuf,
 
     #[clap(
         long,
