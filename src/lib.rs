@@ -48,7 +48,7 @@ impl Each {
             .try_for_each_concurrent(self.num_processes, |source_file| async move {
                 let metadata = source_file.metadata().await?;
                 if metadata.is_file() {
-                    run_process(
+                    run_process_stdin(
                         &source_file,
                         &self.destination_dir,
                         &self.shell,
@@ -64,7 +64,7 @@ impl Each {
     }
 }
 
-async fn run_process(
+async fn run_process_stdin(
     source_file: &fs::DirEntry,
     destination_dir: &Path,
     shell: &str,
