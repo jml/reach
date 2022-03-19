@@ -115,9 +115,12 @@ async fn run_process_stdin(
     Ok(())
 }
 
-#[derive(Debug)]
+/// How the command given to `reach` gets at its input.
+#[derive(Debug, PartialEq)]
 pub enum InputMode {
+    /// The contents of the input file are sent to standard input.
     Stdin,
+    /// The name of the input file is passed as a command-line argument.
     Filename,
 }
 
@@ -142,5 +145,16 @@ async fn ensure_directory(p: &Path) -> io::Result<()> {
             io::ErrorKind::NotFound => Ok(()),
             _ => Err(error),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_input_mode_parse() {
+        assert_eq!(Ok(InputMode::Stdin), "stdin".parse());
+        assert_eq!(Ok(InputMode::Filename), "filename".parse());
     }
 }
