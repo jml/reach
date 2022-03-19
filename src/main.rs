@@ -1,7 +1,6 @@
 use reach::{Each, InputMode};
 
 use clap::Clap;
-use num_cpus;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -82,6 +81,7 @@ async fn main() -> Result<(), io::Error> {
             dest
         }
     };
+    println!("input_mode ignored: {:?}", opts.input_mode);
     let destination = destination.canonicalize().unwrap_or_else(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             fs::create_dir_all(&destination).unwrap_or_else(|error| {
@@ -102,7 +102,7 @@ async fn main() -> Result<(), io::Error> {
             .exit();
         }
     });
-    let num_processes = opts.processes.unwrap_or(num_cpus::get());
+    let num_processes = opts.processes.unwrap_or_else(num_cpus::get);
     let each = Each::new(
         opts.shell,
         opts.command,
