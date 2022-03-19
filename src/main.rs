@@ -1,4 +1,4 @@
-use reach::{Each, InputMode};
+use reach::{Each, InputMode, StdinRunner};
 
 use clap::Clap;
 use std::fs;
@@ -103,14 +103,7 @@ async fn main() -> Result<(), io::Error> {
         }
     });
     let num_processes = opts.processes.unwrap_or_else(num_cpus::get);
-    let each = Each::new(
-        opts.shell,
-        opts.command,
-        opts.source,
-        destination,
-        num_processes,
-        opts.recreate,
-        opts.retries,
-    );
-    each.run().await
+    let runner = StdinRunner::new(opts.shell, opts.command, destination);
+    let each = Each::new(opts.source, num_processes, opts.recreate, opts.retries);
+    each.run(&runner).await
 }

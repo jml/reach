@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use futures::stream::TryStreamExt;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -6,9 +7,7 @@ use tokio::fs;
 use tokio::process::Command;
 use tokio_stream::wrappers::ReadDirStream;
 
-#[derive(Debug)]
 pub struct Each {
-    runner: StdinRunner,
     source_dir: PathBuf,
     num_processes: usize,
 }
@@ -21,34 +20,21 @@ pub struct Each {
 // bunch of lines into a bunch of directories with the lines as contents.
 
 impl Each {
-    pub fn new(
-        shell: String,
-        command: String,
-        source_dir: PathBuf,
-        destination_dir: PathBuf,
-        num_processes: usize,
-        _recreate: bool,
-        _retries: u32,
-    ) -> Self {
+    pub fn new(source_dir: PathBuf, num_processes: usize, _recreate: bool, _retries: u32) -> Self {
         Each {
-            runner: StdinRunner {
-                shell,
-                command,
-                destination_dir,
-            },
             source_dir,
             num_processes,
         }
     }
 
-    pub async fn run(&self) -> io::Result<()> {
+    pub async fn run<R: Runner>(&self, runner: &R) -> io::Result<()> {
         let source_dir = fs::read_dir(&self.source_dir).await?;
         let stream = ReadDirStream::new(source_dir);
         stream
             .try_for_each_concurrent(self.num_processes, |source_file| async move {
                 let metadata = source_file.metadata().await?;
                 if metadata.is_file() {
-                    self.runner.run(&source_file).await
+                    runner.run(&source_file).await
                 } else {
                     Ok(())
                 }
@@ -58,14 +44,30 @@ impl Each {
     }
 }
 
+#[async_trait]
+pub trait Runner {
+    async fn run(&self, source_file: &fs::DirEntry) -> io::Result<()>;
+}
+
 #[derive(Debug)]
-struct StdinRunner {
+pub struct StdinRunner {
     shell: String,
     command: String,
     destination_dir: PathBuf,
 }
 
 impl StdinRunner {
+    pub fn new(shell: String, command: String, destination_dir: PathBuf) -> Self {
+        StdinRunner {
+            shell,
+            command,
+            destination_dir,
+        }
+    }
+}
+
+#[async_trait]
+impl Runner for StdinRunner {
     async fn run(&self, source_file: &fs::DirEntry) -> io::Result<()> {
         run_process_stdin(
             source_file,
