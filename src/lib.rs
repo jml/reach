@@ -8,10 +8,8 @@ use tokio_stream::wrappers::ReadDirStream;
 
 #[derive(Debug)]
 pub struct Each {
-    shell: String,
-    command: String,
+    runner: StdinRunner,
     source_dir: PathBuf,
-    destination_dir: PathBuf,
     num_processes: usize,
 }
 
@@ -33,10 +31,12 @@ impl Each {
         _retries: u32,
     ) -> Self {
         Each {
-            shell,
-            command,
+            runner: StdinRunner {
+                shell,
+                command,
+                destination_dir,
+            },
             source_dir,
-            destination_dir,
             num_processes,
         }
     }
@@ -48,19 +48,32 @@ impl Each {
             .try_for_each_concurrent(self.num_processes, |source_file| async move {
                 let metadata = source_file.metadata().await?;
                 if metadata.is_file() {
-                    run_process_stdin(
-                        &source_file,
-                        &self.destination_dir,
-                        &self.shell,
-                        &self.command,
-                    )
-                    .await
+                    self.runner.run(&source_file).await
                 } else {
                     Ok(())
                 }
             })
             .await?;
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct StdinRunner {
+    shell: String,
+    command: String,
+    destination_dir: PathBuf,
+}
+
+impl StdinRunner {
+    async fn run(&self, source_file: &fs::DirEntry) -> io::Result<()> {
+        run_process_stdin(
+            source_file,
+            &self.destination_dir,
+            &self.shell,
+            &self.command,
+        )
+        .await
     }
 }
 
