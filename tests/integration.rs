@@ -1,5 +1,5 @@
 use reach;
-use std::env;
+use std::{env, io};
 use tempfile;
 use tokio;
 
@@ -9,14 +9,13 @@ use tokio;
 /// Not actually an interesting test in itself, but rather a pattern for tests to come,
 /// and a way of exploring our public API.
 #[tokio::test]
-async fn test_stdin() {
-    let source = tempfile::tempdir().unwrap();
+async fn test_stdin_empty() -> io::Result<()> {
+    let source = tempfile::tempdir()?;
     let source_path = source.path().to_path_buf();
-    let destination = tempfile::tempdir().unwrap();
+    let destination = tempfile::tempdir()?;
     let destination_path = destination.path().to_path_buf();
     let each = reach::Each::new(source_path, 1, true, 0);
     let shell = env::var("SHELL").unwrap();
     let runner = reach::StdinRunner::new(shell, "cat".to_string(), destination_path);
-    let result = each.run(&runner).await;
-    result.unwrap();
+    each.run(&runner).await
 }
