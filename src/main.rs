@@ -58,59 +58,87 @@ struct Opts {
     input_mode: Option<InputMode>,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), io::Error> {
-    let opts: Opts = Opts::parse();
-    let source = opts.source.canonicalize().unwrap_or_else(|error| {
+struct Config {
+    command: String,
+    shell: String,
+    source_dir: PathBuf,
+    destination_dir: PathBuf,
+    num_processes: usize,
+    input_mode: InputMode,
+    recreate: bool,
+    retries: u32,
+}
+
+fn parse_options(opts: Opts) -> Result<Config, clap::Error> {
+    let source = opts.source.canonicalize().map_err(|error| {
         clap::Error::with_description(
             format!("Invalid source directory {:?}: {}", opts.source, error),
             clap::ErrorKind::Io,
         )
-        .exit();
-    });
+    })?;
     let destination = match opts.destination {
         Some(p) => p,
         None => {
             // TODO: Write a test for this bit.
-            let mut file_name = source.file_name().unwrap_or_else(|| {
-                clap::Error::with_description(format!("You must provide an explicit destination directory if source directory is {}", source.to_str().unwrap()), clap::ErrorKind::ValueValidation).exit();
-            }).to_owned();
+            let mut file_name = source.file_name().ok_or_else(|| {
+                clap::Error::with_description(format!("You must provide an explicit destination directory if source directory is {}", source.to_str().unwrap()), clap::ErrorKind::ValueValidation)
+            })?.to_owned();
             file_name.push("-results");
             let mut dest = source.clone();
             dest.set_file_name(file_name);
             dest
         }
     };
-    let destination = destination.canonicalize().unwrap_or_else(|error| {
+    let destination = destination.canonicalize().or_else(|error| {
         if error.kind() == io::ErrorKind::NotFound {
-            fs::create_dir_all(&destination).unwrap_or_else(|error| {
+            fs::create_dir_all(&destination).map_err(|error| {
                 clap::Error::with_description(
                     format!(
                         "Could not create destination directory {:?}: {}",
                         destination, error
                     ),
                     clap::ErrorKind::Io,
-                );
-            });
-            destination
+                )
+            })?;
+            Ok(destination)
         } else {
-            clap::Error::with_description(
+            Err(clap::Error::with_description(
                 format!("Invalid destination directory {:?}: {}", destination, error),
                 clap::ErrorKind::Io,
-            )
-            .exit();
+            ))
         }
-    });
+    })?;
     let num_processes = opts.processes.unwrap_or_else(num_cpus::get);
     let input_mode = opts.input_mode.unwrap_or(InputMode::Stdin);
-    let each = Each::new(opts.source, num_processes, opts.recreate, opts.retries);
-    match input_mode {
+    Ok(Config {
+        command: opts.command,
+        shell: opts.shell,
+        source_dir: source,
+        destination_dir: destination,
+        num_processes,
+        input_mode,
+        recreate: opts.recreate,
+        retries: opts.retries,
+    })
+}
+
+#[tokio::main]
+async fn main() -> Result<(), io::Error> {
+    let opts: Opts = Opts::parse();
+    let config = parse_options(opts).unwrap_or_else(|err| err.exit());
+    let each = Each::new(
+        config.source_dir,
+        config.num_processes,
+        config.recreate,
+        config.retries,
+    );
+    match config.input_mode {
         InputMode::Stdin => {
-            let runner = StdinRunner::new(opts.shell, opts.command, destination);
+            let runner = StdinRunner::new(config.shell, config.command, config.destination_dir);
             each.run(&runner).await
         }
         InputMode::Filename => {
-            let runner = FilenameRunner::new(opts.shell, opts.command, destination);
+            let runner = FilenameRunner::new(config.shell, config.command, config.destination_dir);
             each.run(&runner).await
         }
     }
