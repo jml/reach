@@ -1,4 +1,4 @@
-use reach::{Each, InputMode, StdinRunner};
+use reach::{Each, FilenameRunner, InputMode, StdinRunner};
 
 use clap::Clap;
 use std::fs;
@@ -81,7 +81,6 @@ async fn main() -> Result<(), io::Error> {
             dest
         }
     };
-    println!("input_mode ignored: {:?}", opts.input_mode);
     let destination = destination.canonicalize().unwrap_or_else(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             fs::create_dir_all(&destination).unwrap_or_else(|error| {
@@ -103,7 +102,16 @@ async fn main() -> Result<(), io::Error> {
         }
     });
     let num_processes = opts.processes.unwrap_or_else(num_cpus::get);
-    let runner = StdinRunner::new(opts.shell, opts.command, destination);
+    let input_mode = opts.input_mode.unwrap_or(InputMode::Stdin);
     let each = Each::new(opts.source, num_processes, opts.recreate, opts.retries);
-    each.run(&runner).await
+    match input_mode {
+        InputMode::Stdin => {
+            let runner = StdinRunner::new(opts.shell, opts.command, destination);
+            each.run(&runner).await
+        }
+        InputMode::Filename => {
+            let runner = FilenameRunner::new(opts.shell, opts.command, destination);
+            each.run(&runner).await
+        }
+    }
 }

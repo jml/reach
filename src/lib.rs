@@ -102,6 +102,61 @@ impl Runner for StdinRunner {
     }
 }
 
+pub struct FilenameRunner {
+    shell: String,
+    command: String,
+    destination_dir: PathBuf,
+}
+
+impl FilenameRunner {
+    pub fn new(shell: String, command: String, destination_dir: PathBuf) -> Self {
+        FilenameRunner {
+            shell,
+            command,
+            destination_dir,
+        }
+    }
+}
+
+#[async_trait]
+impl Runner for FilenameRunner {
+    async fn run(&self, source_file: &fs::DirEntry) -> io::Result<()> {
+        // TODO(jml): This function duplicates way too much from StdinRunner.
+        // I think we probably want to make a factory for Command.
+        let source_path = source_file.path();
+        let source_path = source_path.to_str().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("Non-unicode filename: {:?}", source_path),
+            )
+        })?;
+        let command = self.command.replace("{}", source_path);
+
+        let mut base_directory = self.destination_dir.clone();
+        base_directory.push(source_file.file_name());
+
+        ensure_directory(&base_directory).await?;
+
+        // TODO(jml): 'create' truncates. Actual desired behaviour depends on 'recreate' setting.
+        let mut out_path = base_directory.clone();
+        out_path.push("out");
+        let out_file = fs::File::create(out_path).await?.into_std().await;
+
+        let mut err_path = base_directory.clone();
+        err_path.push("err");
+        let err_file = fs::File::create(err_path).await?.into_std().await;
+
+        let mut child_process = Command::new(&self.shell)
+            .arg("-c")
+            .arg(&command)
+            .stdout(out_file)
+            .stderr(err_file)
+            .spawn()?;
+        child_process.wait().await?;
+        Ok(())
+    }
+}
+
 /// How the command given to `reach` gets at its input.
 #[derive(Debug, PartialEq)]
 pub enum InputMode {
