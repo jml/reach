@@ -1,8 +1,9 @@
 use reach;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{env, fs, io};
 use tempfile;
+use tempfile::TempDir;
 use tokio;
 
 fn new_test_config<C, S, D>(
@@ -26,6 +27,21 @@ where
         recreate: true,
         retries: 1,
     }
+}
+
+fn make_source_directory<S>(files: &[(S, &[u8])]) -> io::Result<TempDir>
+where
+    S: AsRef<Path>,
+{
+    let source = tempfile::tempdir()?;
+    let source_path = source.path();
+    for entry in files.iter() {
+        let (path, contents) = entry;
+        let file_path = source_path.join(path);
+        let mut file = fs::File::create(file_path)?;
+        file.write(contents)?;
+    }
+    Ok(source)
 }
 
 /// Smoke test for each.
@@ -54,14 +70,10 @@ async fn test_stdin_empty() -> io::Result<()> {
 /// and the `status` files don't exist, because we haven't implemented them.
 #[tokio::test]
 async fn test_stdin() -> io::Result<()> {
-    let source = tempfile::tempdir()?;
-    let source_path = source.path();
-    let file1_path = source_path.join("file1.txt");
-    let mut file1 = fs::File::create(file1_path)?;
-    writeln!(file1, "Arbitrary content for file one")?;
-    let file2_path = source_path.join("file2.txt");
-    let mut file2 = fs::File::create(file2_path)?;
-    writeln!(file2, "Arbitrary content for file two")?;
+    let source = make_source_directory(&[
+        ("file1.txt", b"Arbitrary content for file one\n"),
+        ("file2.txt", b"Arbitrary content for file two\n"),
+    ])?;
 
     let destination = tempfile::tempdir()?;
     reach::run(new_test_config(
@@ -108,14 +120,10 @@ async fn test_stdin() -> io::Result<()> {
 /// and the `status` files don't exist, because we haven't implemented them.
 #[tokio::test]
 async fn test_filename() -> io::Result<()> {
-    let source = tempfile::tempdir()?;
-    let source_path = source.path();
-    let file1_path = source_path.join("file1.txt");
-    let mut file1 = fs::File::create(file1_path)?;
-    writeln!(file1, "Arbitrary content for file one")?;
-    let file2_path = source_path.join("file2.txt");
-    let mut file2 = fs::File::create(file2_path)?;
-    writeln!(file2, "Arbitrary content for file two")?;
+    let source = make_source_directory(&[
+        ("file1.txt", b"Arbitrary content for file one\n"),
+        ("file2.txt", b"Arbitrary content for file two\n"),
+    ])?;
 
     let destination = tempfile::tempdir()?;
     reach::run(new_test_config(
@@ -134,7 +142,7 @@ async fn test_filename() -> io::Result<()> {
 
     assert_eq!(vec!["file1.txt", "file2.txt"], filenames);
     assert_eq!(
-        source_path.join("file1.txt").to_string_lossy(),
+        source.path().join("file1.txt").to_string_lossy(),
         String::from_utf8_lossy(&fs::read(destination_path.join("file1.txt/out"))?)
     );
     assert_eq!(
@@ -143,7 +151,7 @@ async fn test_filename() -> io::Result<()> {
     );
     assert!(!destination_path.join("file1/status").exists());
     assert_eq!(
-        source_path.join("file2.txt").to_string_lossy(),
+        source.path().join("file2.txt").to_string_lossy(),
         String::from_utf8_lossy(&fs::read(destination_path.join("file2.txt/out"))?)
     );
     assert_eq!(
