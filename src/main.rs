@@ -3,7 +3,7 @@ use reach::{Each, FilenameRunner, InputMode, StdinRunner};
 use clap::Clap;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Clap, Debug)]
 #[clap(version = "0.1", author = "Jonathan M. Lange <jml@mumak.net>")]
@@ -58,6 +58,7 @@ struct Opts {
     input_mode: Option<InputMode>,
 }
 
+/// Configuration for Each.
 struct Config {
     command: String,
     shell: String,
@@ -76,20 +77,51 @@ fn parse_options(opts: Opts) -> Result<Config, clap::Error> {
             clap::ErrorKind::Io,
         )
     })?;
+    // TODO(jml): There feels like there should be some more idiomatic way of doing this.
     let destination = match opts.destination {
-        Some(p) => p,
-        None => {
-            // TODO: Write a test for this bit.
-            let mut file_name = source.file_name().ok_or_else(|| {
-                clap::Error::with_description(format!("You must provide an explicit destination directory if source directory is {}", source.to_str().unwrap()), clap::ErrorKind::ValueValidation)
-            })?.to_owned();
-            file_name.push("-results");
-            let mut dest = source.clone();
-            dest.set_file_name(file_name);
-            dest
-        }
-    };
-    let destination = destination.canonicalize().or_else(|error| {
+        Some(p) => Ok(p),
+        None => get_destination_dir(&source),
+    }?;
+    let destination = ensure_destination_directory(destination)?;
+    let num_processes = opts.processes.unwrap_or_else(num_cpus::get);
+    let input_mode = opts.input_mode.unwrap_or(InputMode::Stdin);
+    Ok(Config {
+        command: opts.command,
+        shell: opts.shell,
+        source_dir: source,
+        destination_dir: destination,
+        num_processes,
+        input_mode,
+        recreate: opts.recreate,
+        retries: opts.retries,
+    })
+}
+
+/// Make up a path to the destination directory from the source directory.
+/// `foo` becomes `foo-results`
+fn get_destination_dir(source_dir: &Path) -> Result<PathBuf, clap::Error> {
+    // TODO: Write a test for this bit.
+    let mut file_name = source_dir
+        .file_name()
+        .ok_or_else(|| {
+            clap::Error::with_description(
+                format!(
+                    "You must provide an explicit destination directory if source directory is {}",
+                    source_dir.to_str().unwrap()
+                ),
+                clap::ErrorKind::ValueValidation,
+            )
+        })?
+        .to_owned();
+    file_name.push("-results");
+    let mut dest = source_dir.to_path_buf();
+    dest.set_file_name(file_name);
+    Ok(dest)
+}
+
+/// Create the destination directory if it doesn't exist.
+fn ensure_destination_directory(destination: PathBuf) -> Result<PathBuf, clap::Error> {
+    destination.canonicalize().or_else(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             fs::create_dir_all(&destination).map_err(|error| {
                 clap::Error::with_description(
@@ -107,18 +139,6 @@ fn parse_options(opts: Opts) -> Result<Config, clap::Error> {
                 clap::ErrorKind::Io,
             ))
         }
-    })?;
-    let num_processes = opts.processes.unwrap_or_else(num_cpus::get);
-    let input_mode = opts.input_mode.unwrap_or(InputMode::Stdin);
-    Ok(Config {
-        command: opts.command,
-        shell: opts.shell,
-        source_dir: source,
-        destination_dir: destination,
-        num_processes,
-        input_mode,
-        recreate: opts.recreate,
-        retries: opts.retries,
     })
 }
 
