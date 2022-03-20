@@ -7,7 +7,38 @@ use tokio::fs;
 use tokio::process::Command;
 use tokio_stream::wrappers::ReadDirStream;
 
-pub struct Each {
+/// Configuration for Each.
+pub struct Config {
+    pub command: String,
+    pub shell: String,
+    pub source_dir: PathBuf,
+    pub destination_dir: PathBuf,
+    pub num_processes: usize,
+    pub input_mode: InputMode,
+    pub recreate: bool,
+    pub retries: u32,
+}
+
+pub async fn run(config: Config) -> io::Result<()> {
+    let each = Each::new(
+        config.source_dir,
+        config.num_processes,
+        config.recreate,
+        config.retries,
+    );
+    match config.input_mode {
+        InputMode::Stdin => {
+            let runner = StdinRunner::new(config.shell, config.command, config.destination_dir);
+            each.run(&runner).await
+        }
+        InputMode::Filename => {
+            let runner = FilenameRunner::new(config.shell, config.command, config.destination_dir);
+            each.run(&runner).await
+        }
+    }
+}
+
+struct Each {
     source_dir: PathBuf,
     num_processes: usize,
 }
@@ -20,14 +51,14 @@ pub struct Each {
 // bunch of lines into a bunch of directories with the lines as contents.
 
 impl Each {
-    pub fn new(source_dir: PathBuf, num_processes: usize, _recreate: bool, _retries: u32) -> Self {
+    fn new(source_dir: PathBuf, num_processes: usize, _recreate: bool, _retries: u32) -> Self {
         Each {
             source_dir,
             num_processes,
         }
     }
 
-    pub async fn run<R: Runner>(&self, runner: &R) -> io::Result<()> {
+    async fn run<R: Runner>(&self, runner: &R) -> io::Result<()> {
         let source_dir = fs::read_dir(&self.source_dir).await?;
         let stream = ReadDirStream::new(source_dir);
         stream
@@ -45,19 +76,19 @@ impl Each {
 }
 
 #[async_trait]
-pub trait Runner {
+trait Runner {
     async fn run(&self, source_file: &fs::DirEntry) -> io::Result<()>;
 }
 
 #[derive(Debug)]
-pub struct StdinRunner {
+struct StdinRunner {
     shell: String,
     command: String,
     destination_dir: PathBuf,
 }
 
 impl StdinRunner {
-    pub fn new(shell: String, command: String, destination_dir: PathBuf) -> Self {
+    fn new(shell: String, command: String, destination_dir: PathBuf) -> Self {
         StdinRunner {
             shell,
             command,
@@ -102,14 +133,14 @@ impl Runner for StdinRunner {
     }
 }
 
-pub struct FilenameRunner {
+struct FilenameRunner {
     shell: String,
     command: String,
     destination_dir: PathBuf,
 }
 
 impl FilenameRunner {
-    pub fn new(shell: String, command: String, destination_dir: PathBuf) -> Self {
+    fn new(shell: String, command: String, destination_dir: PathBuf) -> Self {
         FilenameRunner {
             shell,
             command,

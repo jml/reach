@@ -1,4 +1,4 @@
-use reach::{Each, FilenameRunner, InputMode, StdinRunner};
+use reach::{Config, InputMode};
 
 use clap::Clap;
 use std::fs;
@@ -56,18 +56,6 @@ struct Opts {
         possible_values = &["stdin", "filename"],
     )]
     input_mode: Option<InputMode>,
-}
-
-/// Configuration for Each.
-struct Config {
-    command: String,
-    shell: String,
-    source_dir: PathBuf,
-    destination_dir: PathBuf,
-    num_processes: usize,
-    input_mode: InputMode,
-    recreate: bool,
-    retries: u32,
 }
 
 fn parse_options(opts: Opts) -> Result<Config, clap::Error> {
@@ -146,20 +134,5 @@ fn ensure_destination_directory(destination: PathBuf) -> Result<PathBuf, clap::E
 async fn main() -> Result<(), io::Error> {
     let opts: Opts = Opts::parse();
     let config = parse_options(opts).unwrap_or_else(|err| err.exit());
-    let each = Each::new(
-        config.source_dir,
-        config.num_processes,
-        config.recreate,
-        config.retries,
-    );
-    match config.input_mode {
-        InputMode::Stdin => {
-            let runner = StdinRunner::new(config.shell, config.command, config.destination_dir);
-            each.run(&runner).await
-        }
-        InputMode::Filename => {
-            let runner = FilenameRunner::new(config.shell, config.command, config.destination_dir);
-            each.run(&runner).await
-        }
-    }
+    reach::run(config).await
 }

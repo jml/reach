@@ -1,8 +1,32 @@
 use reach;
 use std::io::Write;
+use std::path::PathBuf;
 use std::{env, fs, io};
 use tempfile;
 use tokio;
+
+fn new_test_config<C, S, D>(
+    command: C,
+    source_dir: S,
+    dest_dir: D,
+    input_mode: reach::InputMode,
+) -> reach::Config
+where
+    C: Into<String>,
+    S: Into<PathBuf>,
+    D: Into<PathBuf>,
+{
+    reach::Config {
+        command: command.into(),
+        shell: env::var("SHELL").unwrap(),
+        source_dir: source_dir.into(),
+        destination_dir: dest_dir.into(),
+        input_mode,
+        num_processes: 1,
+        recreate: true,
+        retries: 1,
+    }
+}
 
 /// Smoke test for each.
 ///
@@ -12,13 +36,14 @@ use tokio;
 #[tokio::test]
 async fn test_stdin_empty() -> io::Result<()> {
     let source = tempfile::tempdir()?;
-    let source_path = source.path().to_path_buf();
     let destination = tempfile::tempdir()?;
-    let destination_path = destination.path().to_path_buf();
-    let each = reach::Each::new(source_path, 1, true, 0);
-    let shell = env::var("SHELL").unwrap();
-    let runner = reach::StdinRunner::new(shell, "cat".to_string(), destination_path);
-    each.run(&runner).await
+    reach::run(new_test_config(
+        "cat",
+        source.path(),
+        destination.path(),
+        reach::InputMode::Stdin,
+    ))
+    .await
 }
 
 /// Basic test for stdin processing happy path.
@@ -39,12 +64,15 @@ async fn test_stdin() -> io::Result<()> {
     writeln!(file2, "Arbitrary content for file two")?;
 
     let destination = tempfile::tempdir()?;
-    let destination_path = destination.path();
-    let each = reach::Each::new(source_path.to_path_buf(), 1, true, 0);
-    let shell = env::var("SHELL").unwrap();
-    let runner = reach::StdinRunner::new(shell, "cat".to_string(), destination_path.to_path_buf());
-    each.run(&runner).await?;
+    reach::run(new_test_config(
+        "cat",
+        source.path(),
+        destination.path(),
+        reach::InputMode::Stdin,
+    ))
+    .await?;
 
+    let destination_path = destination.path();
     let mut filenames = fs::read_dir(destination_path)?
         .map(|res| res.map(|e| e.file_name()))
         .collect::<Result<Vec<_>, io::Error>>()?;
@@ -90,16 +118,15 @@ async fn test_filename() -> io::Result<()> {
     writeln!(file2, "Arbitrary content for file two")?;
 
     let destination = tempfile::tempdir()?;
-    let destination_path = destination.path();
-    let each = reach::Each::new(source_path.to_path_buf(), 1, true, 0);
-    let shell = env::var("SHELL").unwrap();
-    let runner = reach::FilenameRunner::new(
-        shell,
-        "echo -n {}".to_string(),
-        destination_path.to_path_buf(),
-    );
-    each.run(&runner).await?;
+    reach::run(new_test_config(
+        "echo -n {}",
+        source.path(),
+        destination.path(),
+        reach::InputMode::Filename,
+    ))
+    .await?;
 
+    let destination_path = destination.path();
     let mut filenames = fs::read_dir(destination_path)?
         .map(|res| res.map(|e| e.file_name()))
         .collect::<Result<Vec<_>, io::Error>>()?;
