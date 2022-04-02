@@ -74,6 +74,31 @@ impl Each {
     }
 }
 
+async fn run_command(
+    command: &mut Command,
+    source_file: &fs::DirEntry,
+    destination_dir: &Path,
+) -> io::Result<()> {
+    // TODO(jml): This function has potential for internal parallelism.
+    // Better understand how join! and .await work and see if there's any benefit.
+    let base_directory = destination_dir.join(source_file.file_name());
+
+    ensure_directory(&base_directory).await?;
+
+    // TODO(jml): 'create' truncates. Actual desired behaviour depends on 'recreate' setting.
+    let mut out_path = base_directory.clone();
+    out_path.push("out");
+    let out_file = fs::File::create(out_path).await?.into_std().await;
+
+    let mut err_path = base_directory.clone();
+    err_path.push("err");
+    let err_file = fs::File::create(err_path).await?.into_std().await;
+
+    let mut child_process = command.stdout(out_file).stderr(err_file).spawn()?;
+    child_process.wait().await?;
+    Ok(())
+}
+
 #[async_trait]
 trait Runner {
     async fn get_command(&self, source_file: &fs::DirEntry) -> io::Result<Command>;
@@ -104,26 +129,8 @@ impl Runner for StdinRunner {
     }
 
     async fn run(&self, source_file: &fs::DirEntry, destination_dir: &Path) -> io::Result<()> {
-        // TODO(jml): This function has potential for internal parallelism.
-        // Better understand how join! and .await work and see if there's any benefit.
         let mut command = self.get_command(source_file).await?;
-
-        let base_directory = destination_dir.join(source_file.file_name());
-
-        ensure_directory(&base_directory).await?;
-
-        // TODO(jml): 'create' truncates. Actual desired behaviour depends on 'recreate' setting.
-        let mut out_path = base_directory.clone();
-        out_path.push("out");
-        let out_file = fs::File::create(out_path).await?.into_std().await;
-
-        let mut err_path = base_directory.clone();
-        err_path.push("err");
-        let err_file = fs::File::create(err_path).await?.into_std().await;
-
-        let mut child_process = command.stdout(out_file).stderr(err_file).spawn()?;
-        child_process.wait().await?;
-        Ok(())
+        run_command(&mut command, source_file, destination_dir).await
     }
 }
 
@@ -156,26 +163,8 @@ impl Runner for FilenameRunner {
     }
 
     async fn run(&self, source_file: &fs::DirEntry, destination_dir: &Path) -> io::Result<()> {
-        // TODO(jml): This function is a near duplicate of StdinRunner.run.
-        // We can probably move this function out of the trait.
         let mut command = self.get_command(source_file).await?;
-
-        let base_directory = destination_dir.join(source_file.file_name());
-
-        ensure_directory(&base_directory).await?;
-
-        // TODO(jml): 'create' truncates. Actual desired behaviour depends on 'recreate' setting.
-        let mut out_path = base_directory.clone();
-        out_path.push("out");
-        let out_file = fs::File::create(out_path).await?.into_std().await;
-
-        let mut err_path = base_directory.clone();
-        err_path.push("err");
-        let err_file = fs::File::create(err_path).await?.into_std().await;
-
-        let mut child_process = command.stdout(out_file).stderr(err_file).spawn()?;
-        child_process.wait().await?;
-        Ok(())
+        run_command(&mut command, source_file, destination_dir).await
     }
 }
 
