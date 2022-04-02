@@ -64,7 +64,8 @@ impl Each {
             .try_for_each_concurrent(self.num_processes, |source_file| async move {
                 let metadata = source_file.metadata().await?;
                 if metadata.is_file() {
-                    runner.run(&source_file, destination_dir).await
+                    let mut command = runner.get_command(&source_file).await?;
+                    run_command(&mut command, &source_file, destination_dir).await
                 } else {
                     Ok(())
                 }
@@ -102,7 +103,6 @@ async fn run_command(
 #[async_trait]
 trait Runner {
     async fn get_command(&self, source_file: &fs::DirEntry) -> io::Result<Command>;
-    async fn run(&self, source_file: &fs::DirEntry, destination_dir: &Path) -> io::Result<()>;
 }
 
 #[derive(Debug)]
@@ -126,11 +126,6 @@ impl Runner for StdinRunner {
         let mut command = Command::new(&self.shell);
         command.arg("-c").arg(&self.command).stdin(in_file);
         Ok(command)
-    }
-
-    async fn run(&self, source_file: &fs::DirEntry, destination_dir: &Path) -> io::Result<()> {
-        let mut command = self.get_command(source_file).await?;
-        run_command(&mut command, source_file, destination_dir).await
     }
 }
 
@@ -160,11 +155,6 @@ impl Runner for FilenameRunner {
             .arg("-c")
             .arg(self.command.replace("{}", source_path));
         Ok(command)
-    }
-
-    async fn run(&self, source_file: &fs::DirEntry, destination_dir: &Path) -> io::Result<()> {
-        let mut command = self.get_command(source_file).await?;
-        run_command(&mut command, source_file, destination_dir).await
     }
 }
 
