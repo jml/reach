@@ -1,10 +1,9 @@
-use reach::{Each, InputMode};
+use reach::{Config, InputMode};
 
 use clap::Clap;
-use num_cpus;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Clap, Debug)]
 #[clap(version = "0.1", author = "Jonathan M. Lange <jml@mumak.net>")]
@@ -59,58 +58,82 @@ struct Opts {
     input_mode: Option<InputMode>,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), io::Error> {
-    let opts: Opts = Opts::parse();
-    let source = opts.source.canonicalize().unwrap_or_else(|error| {
+fn parse_options(opts: Opts) -> Result<Config, clap::Error> {
+    let source = opts.source.canonicalize().map_err(|error| {
         clap::Error::with_description(
             format!("Invalid source directory {:?}: {}", opts.source, error),
             clap::ErrorKind::Io,
         )
-        .exit();
-    });
+    })?;
+    // TODO(jml): There feels like there should be some more idiomatic way of doing this.
     let destination = match opts.destination {
-        Some(p) => p,
-        None => {
-            // TODO: Write a test for this bit.
-            let mut file_name = source.file_name().unwrap_or_else(|| {
-                clap::Error::with_description(format!("You must provide an explicit destination directory if source directory is {}", source.to_str().unwrap()), clap::ErrorKind::ValueValidation).exit();
-            }).to_owned();
-            file_name.push("-results");
-            let mut dest = source.clone();
-            dest.set_file_name(file_name);
-            dest
-        }
-    };
-    let destination = destination.canonicalize().unwrap_or_else(|error| {
+        Some(p) => Ok(p),
+        None => get_destination_dir(&source),
+    }?;
+    let destination = ensure_destination_directory(destination)?;
+    let num_processes = opts.processes.unwrap_or_else(num_cpus::get);
+    // TODO(jml): Automatically choose Filename input mode if {} present in command.
+    let input_mode = opts.input_mode.unwrap_or(InputMode::Stdin);
+    Ok(Config {
+        command: opts.command,
+        shell: opts.shell,
+        source_dir: source,
+        destination_dir: destination,
+        num_processes,
+        input_mode,
+        recreate: opts.recreate,
+        retries: opts.retries,
+    })
+}
+
+/// Make up a path to the destination directory from the source directory.
+/// `foo` becomes `foo-results`
+fn get_destination_dir(source_dir: &Path) -> Result<PathBuf, clap::Error> {
+    // TODO: Write a test for this bit.
+    let mut file_name = source_dir
+        .file_name()
+        .ok_or_else(|| {
+            clap::Error::with_description(
+                format!(
+                    "You must provide an explicit destination directory if source directory is {}",
+                    source_dir.to_str().unwrap()
+                ),
+                clap::ErrorKind::ValueValidation,
+            )
+        })?
+        .to_owned();
+    file_name.push("-results");
+    let mut dest = source_dir.to_path_buf();
+    dest.set_file_name(file_name);
+    Ok(dest)
+}
+
+/// Create the destination directory if it doesn't exist.
+fn ensure_destination_directory(destination: PathBuf) -> Result<PathBuf, clap::Error> {
+    destination.canonicalize().or_else(|error| {
         if error.kind() == io::ErrorKind::NotFound {
-            fs::create_dir_all(&destination).unwrap_or_else(|error| {
+            fs::create_dir_all(&destination).map_err(|error| {
                 clap::Error::with_description(
                     format!(
                         "Could not create destination directory {:?}: {}",
                         destination, error
                     ),
                     clap::ErrorKind::Io,
-                );
-            });
-            destination
+                )
+            })?;
+            Ok(destination)
         } else {
-            clap::Error::with_description(
+            Err(clap::Error::with_description(
                 format!("Invalid destination directory {:?}: {}", destination, error),
                 clap::ErrorKind::Io,
-            )
-            .exit();
+            ))
         }
-    });
-    let num_processes = opts.processes.unwrap_or(num_cpus::get());
-    let each = Each::new(
-        opts.shell,
-        opts.command,
-        opts.source,
-        destination,
-        num_processes,
-        opts.recreate,
-        opts.retries,
-    );
-    each.run().await
+    })
+}
+
+#[tokio::main]
+async fn main() -> Result<(), io::Error> {
+    let opts: Opts = Opts::parse();
+    let config = parse_options(opts).unwrap_or_else(|err| err.exit());
+    reach::run(config).await
 }
