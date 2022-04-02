@@ -43,7 +43,6 @@ struct Each {
     num_processes: usize,
 }
 
-// TODO: Add support for both input modes
 // TODO: Add progress bar
 
 // TODO: Add support for source "dir" being a filename with a bunch of lines.
