@@ -64,8 +64,7 @@ impl Each {
             .try_for_each_concurrent(self.num_processes, |source_file| async move {
                 let metadata = source_file.metadata().await?;
                 if metadata.is_file() {
-                    let mut command = runner.get_command(&source_file).await?;
-                    self.run_command(&mut command, &source_file, destination_dir)
+                    self.run_command(runner, &source_file, destination_dir)
                         .await
                 } else {
                     Ok(())
@@ -75,9 +74,9 @@ impl Each {
         Ok(())
     }
 
-    async fn run_command(
+    async fn run_command<R: Runner>(
         &self,
-        command: &mut Command,
+        runner: &R,
         source_file: &fs::DirEntry,
         destination_dir: &Path,
     ) -> io::Result<()> {
@@ -94,6 +93,7 @@ impl Each {
         let err_path = base_directory.join("err");
         let err_file = fs::File::create(err_path).await?.into_std().await;
 
+        let mut command = runner.get_command(source_file).await?;
         let mut child_process = command.stdout(out_file).stderr(err_file).spawn()?;
         child_process.wait().await?;
         Ok(())
