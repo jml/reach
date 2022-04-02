@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-      - name: Stable with rustfmt and clippy
+      - name: Stable
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-      - name: Stable with rustfmt and clippy
+      - name: Stable with clippy
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -45,18 +45,33 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features
 
-  dependency-audit:
+  format:
     runs-on: ubuntu-20.04
 
     steps:
-      - name: Stable with rustfmt and clippy
+      - name: Stable with clippy
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           components: clippy
 
+      - name: Format
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt -- --check
+
+  dependency-audit:
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Stable
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+
       - name: Security audit
         uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        # with:
+        #   token: ${{ secrets.GITHUB_TOKEN }}
