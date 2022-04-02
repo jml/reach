@@ -19,7 +19,7 @@ where
 {
     reach::Config {
         command: command.into(),
-        shell: env::var("SHELL").unwrap(),
+        shell: env::var("SHELL").unwrap_or(String::from("/bin/sh")),
         source_dir: source_dir.into(),
         destination_dir: dest_dir.into(),
         input_mode,
