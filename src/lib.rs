@@ -28,12 +28,12 @@ pub async fn run(config: Config) -> io::Result<()> {
     );
     match config.input_mode {
         InputMode::Stdin => {
-            let runner = StdinRunner::new(config.shell, config.command, config.destination_dir);
-            each.run(&runner).await
+            let runner = StdinRunner::new(config.shell, config.command);
+            each.run(&runner, &config.destination_dir).await
         }
         InputMode::Filename => {
-            let runner = FilenameRunner::new(config.shell, config.command, config.destination_dir);
-            each.run(&runner).await
+            let runner = FilenameRunner::new(config.shell, config.command);
+            each.run(&runner, &config.destination_dir).await
         }
     }
 }
@@ -57,14 +57,14 @@ impl Each {
         }
     }
 
-    async fn run<R: Runner>(&self, runner: &R) -> io::Result<()> {
+    async fn run<R: Runner>(&self, runner: &R, destination_dir: &Path) -> io::Result<()> {
         let source_dir = fs::read_dir(&self.source_dir).await?;
         let stream = ReadDirStream::new(source_dir);
         stream
             .try_for_each_concurrent(self.num_processes, |source_file| async move {
                 let metadata = source_file.metadata().await?;
                 if metadata.is_file() {
-                    runner.run(&source_file).await
+                    runner.run(&source_file, destination_dir).await
                 } else {
                     Ok(())
                 }
@@ -77,23 +77,18 @@ impl Each {
 #[async_trait]
 trait Runner {
     async fn get_command(&self, source_file: &fs::DirEntry) -> io::Result<Command>;
-    async fn run(&self, source_file: &fs::DirEntry) -> io::Result<()>;
+    async fn run(&self, source_file: &fs::DirEntry, destination_dir: &Path) -> io::Result<()>;
 }
 
 #[derive(Debug)]
 struct StdinRunner {
     shell: String,
     command: String,
-    destination_dir: PathBuf,
 }
 
 impl StdinRunner {
-    fn new(shell: String, command: String, destination_dir: PathBuf) -> Self {
-        StdinRunner {
-            shell,
-            command,
-            destination_dir,
-        }
+    fn new(shell: String, command: String) -> Self {
+        StdinRunner { shell, command }
     }
 }
 
@@ -108,13 +103,12 @@ impl Runner for StdinRunner {
         Ok(command)
     }
 
-    async fn run(&self, source_file: &fs::DirEntry) -> io::Result<()> {
+    async fn run(&self, source_file: &fs::DirEntry, destination_dir: &Path) -> io::Result<()> {
         // TODO(jml): This function has potential for internal parallelism.
         // Better understand how join! and .await work and see if there's any benefit.
         let mut command = self.get_command(source_file).await?;
 
-        let mut base_directory = self.destination_dir.clone();
-        base_directory.push(source_file.file_name());
+        let base_directory = destination_dir.join(source_file.file_name());
 
         ensure_directory(&base_directory).await?;
 
@@ -136,16 +130,11 @@ impl Runner for StdinRunner {
 struct FilenameRunner {
     shell: String,
     command: String,
-    destination_dir: PathBuf,
 }
 
 impl FilenameRunner {
-    fn new(shell: String, command: String, destination_dir: PathBuf) -> Self {
-        FilenameRunner {
-            shell,
-            command,
-            destination_dir,
-        }
+    fn new(shell: String, command: String) -> Self {
+        FilenameRunner { shell, command }
     }
 }
 
@@ -166,13 +155,12 @@ impl Runner for FilenameRunner {
         Ok(command)
     }
 
-    async fn run(&self, source_file: &fs::DirEntry) -> io::Result<()> {
+    async fn run(&self, source_file: &fs::DirEntry, destination_dir: &Path) -> io::Result<()> {
         // TODO(jml): This function is a near duplicate of StdinRunner.run.
         // We can probably move this function out of the trait.
         let mut command = self.get_command(source_file).await?;
 
-        let mut base_directory = self.destination_dir.clone();
-        base_directory.push(source_file.file_name());
+        let base_directory = destination_dir.join(source_file.file_name());
 
         ensure_directory(&base_directory).await?;
 
