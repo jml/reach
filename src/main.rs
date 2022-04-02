@@ -72,6 +72,7 @@ fn parse_options(opts: Opts) -> Result<Config, clap::Error> {
     }?;
     let destination = ensure_destination_directory(destination)?;
     let num_processes = opts.processes.unwrap_or_else(num_cpus::get);
+    // TODO(jml): Automatically choose Filename input mode if {} present in command.
     let input_mode = opts.input_mode.unwrap_or(InputMode::Stdin);
     Ok(Config {
         command: opts.command,
