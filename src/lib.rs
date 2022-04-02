@@ -23,7 +23,9 @@ pub async fn run(config: Config) -> io::Result<()> {
     let each = Each::new(
         config.source_dir,
         config.num_processes,
+        // TODO(jml): Implement recreate
         config.recreate,
+        // TODO(jml): Implement retries
         config.retries,
     );
     match config.input_mode {
