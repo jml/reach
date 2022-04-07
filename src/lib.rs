@@ -63,14 +63,28 @@ impl Each {
         let source_dir = fs::read_dir(&self.source_dir).await?;
         let stream = ReadDirStream::new(source_dir);
         stream
-            .try_for_each_concurrent(self.num_processes, |source_file| async move {
+            .and_then(|source_file| async move {
                 let metadata = source_file.metadata().await?;
+                println!("metadata: {:?}", metadata);
+                Ok((source_file, metadata))
+            })
+            .try_filter_map(|(source_file, metadata)| async move {
                 if metadata.is_file() {
-                    self.run_command(runner, &source_file, destination_dir)
-                        .await
+                    Ok(Some(source_file))
                 } else {
-                    Ok(())
+                    Ok(None)
                 }
+            })
+            .try_for_each_concurrent(self.num_processes, |source_file| async move {
+                let result = self
+                    .run_command(runner, &source_file, destination_dir)
+                    .await;
+                println!(
+                    "run_command for {:?}: {:?}",
+                    source_file.file_name(),
+                    result
+                );
+                result
             })
             .await?;
         Ok(())
