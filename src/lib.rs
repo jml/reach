@@ -1,7 +1,10 @@
 use async_trait::async_trait;
-use futures::stream::TryStreamExt;
+use futures::stream;
+use indicatif::ProgressBar;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::process::ExitStatus;
 use std::str::FromStr;
 use tokio::fs;
 use tokio::process::Command;
@@ -45,8 +48,6 @@ struct Each {
     num_processes: usize,
 }
 
-// TODO: Add progress bar
-
 // TODO: Add support for source "dir" being a filename with a bunch of lines.
 // Consider instead making a separate command that turns a filename with a
 // bunch of lines into a bunch of directories with the lines as contents.
@@ -59,13 +60,13 @@ impl Each {
         }
     }
 
-    async fn run<R: Runner>(&self, runner: &R, destination_dir: &Path) -> io::Result<()> {
+    async fn load_files(&self) -> io::Result<Vec<fs::DirEntry>> {
+        use stream::TryStreamExt;
         let source_dir = fs::read_dir(&self.source_dir).await?;
         let stream = ReadDirStream::new(source_dir);
         stream
             .and_then(|source_file| async move {
                 let metadata = source_file.metadata().await?;
-                println!("metadata: {:?}", metadata);
                 Ok((source_file, metadata))
             })
             .try_filter_map(|(source_file, metadata)| async move {
@@ -75,18 +76,32 @@ impl Each {
                     None
                 })
             })
-            .try_for_each_concurrent(self.num_processes, |source_file| async move {
+            .try_collect()
+            .await
+    }
+
+    async fn run<R: Runner>(&self, runner: &R, destination_dir: &Path) -> io::Result<()> {
+        use stream::StreamExt;
+        let source_files = self.load_files().await?;
+        let progress_bar = ProgressBar::new(source_files.len() as u64);
+        let progress_bar = Pin::new(&progress_bar);
+        stream::iter(source_files.into_iter())
+            .for_each_concurrent(self.num_processes, |source_file| async move {
                 let result = self
                     .run_command(runner, &source_file, destination_dir)
                     .await;
-                println!(
-                    "run_command for {:?}: {:?}",
-                    source_file.file_name(),
-                    result
-                );
-                result
+                // TODO(jml): Actually use `result` to communicate whether the run succeeded.
+                // TODO(jml): Add some styling to get more useful progress information.
+                // TODO(jml): Hide or suppress the progress bar in tests.
+                match result {
+                    Ok(_) => progress_bar.inc(1),
+                    Err(e) => {
+                        progress_bar.println(format!("Error: {:?}", e));
+                        progress_bar.inc(1);
+                    }
+                }
             })
-            .await?;
+            .await;
         Ok(())
     }
 
@@ -95,7 +110,7 @@ impl Each {
         runner: &R,
         source_file: &fs::DirEntry,
         destination_dir: &Path,
-    ) -> io::Result<()> {
+    ) -> io::Result<ExitStatus> {
         // TODO(jml): This function has potential for internal parallelism.
         // Better understand how join! and .await work and see if there's any benefit.
         let base_directory = destination_dir.join(source_file.file_name());
@@ -111,8 +126,7 @@ impl Each {
 
         let mut command = runner.get_command(source_file).await?;
         let mut child_process = command.stdout(out_file).stderr(err_file).spawn()?;
-        child_process.wait().await?;
-        Ok(())
+        child_process.wait().await
     }
 }
 
