@@ -69,11 +69,11 @@ impl Each {
                 Ok((source_file, metadata))
             })
             .try_filter_map(|(source_file, metadata)| async move {
-                if metadata.is_file() {
-                    Ok(Some(source_file))
+                Ok(if metadata.is_file() {
+                    Some(source_file)
                 } else {
-                    Ok(None)
-                }
+                    None
+                })
             })
             .try_for_each_concurrent(self.num_processes, |source_file| async move {
                 let result = self
