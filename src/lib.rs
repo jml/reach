@@ -1,11 +1,16 @@
 use async_trait::async_trait;
-use futures::stream::TryStreamExt;
+use futures::stream;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::ExitStatus;
 use std::str::FromStr;
 use tokio::fs;
 use tokio::process::Command;
 use tokio_stream::wrappers::ReadDirStream;
+
+mod progress;
+
+pub use progress::default_progress_bar;
 
 /// Configuration for Each.
 pub struct Config {
@@ -19,7 +24,7 @@ pub struct Config {
     pub retries: u32,
 }
 
-pub async fn run(config: Config) -> io::Result<()> {
+pub async fn run(config: Config, progress_bar: impl progress::Progress) -> io::Result<()> {
     let each = Each::new(
         config.source_dir,
         config.num_processes,
@@ -31,11 +36,13 @@ pub async fn run(config: Config) -> io::Result<()> {
     match config.input_mode {
         InputMode::Stdin => {
             let runner = StdinRunner::new(config.shell, config.command);
-            each.run(&runner, &config.destination_dir).await
+            each.run(&runner, &config.destination_dir, &progress_bar)
+                .await
         }
         InputMode::Filename => {
             let runner = FilenameRunner::new(config.shell, config.command);
-            each.run(&runner, &config.destination_dir).await
+            each.run(&runner, &config.destination_dir, &progress_bar)
+                .await
         }
     }
 }
@@ -44,8 +51,6 @@ struct Each {
     source_dir: PathBuf,
     num_processes: usize,
 }
-
-// TODO: Add progress bar
 
 // TODO: Add support for source "dir" being a filename with a bunch of lines.
 // Consider instead making a separate command that turns a filename with a
@@ -59,20 +64,43 @@ impl Each {
         }
     }
 
-    async fn run<R: Runner>(&self, runner: &R, destination_dir: &Path) -> io::Result<()> {
+    async fn load_files(&self) -> io::Result<Vec<fs::DirEntry>> {
+        use stream::TryStreamExt;
         let source_dir = fs::read_dir(&self.source_dir).await?;
         let stream = ReadDirStream::new(source_dir);
         stream
-            .try_for_each_concurrent(self.num_processes, |source_file| async move {
+            .and_then(|source_file| async move {
                 let metadata = source_file.metadata().await?;
-                if metadata.is_file() {
-                    self.run_command(runner, &source_file, destination_dir)
-                        .await
-                } else {
-                    Ok(())
-                }
+                Ok((source_file, metadata))
             })
-            .await?;
+            .try_filter_map(|(source_file, metadata)| async move {
+                Ok(if metadata.is_file() {
+                    Some(source_file)
+                } else {
+                    None
+                })
+            })
+            .try_collect()
+            .await
+    }
+
+    async fn run<R: Runner, P: progress::Progress>(
+        &self,
+        runner: &R,
+        destination_dir: &Path,
+        progress_bar: &P,
+    ) -> io::Result<()> {
+        use stream::StreamExt;
+        let source_files = self.load_files().await?;
+        progress_bar.set_num_tasks(source_files.len());
+        stream::iter(source_files.into_iter())
+            .for_each_concurrent(self.num_processes, |source_file| async move {
+                let result = self
+                    .run_command(runner, &source_file, destination_dir)
+                    .await;
+                progress_bar.task_completed(result);
+            })
+            .await;
         Ok(())
     }
 
@@ -81,7 +109,7 @@ impl Each {
         runner: &R,
         source_file: &fs::DirEntry,
         destination_dir: &Path,
-    ) -> io::Result<()> {
+    ) -> io::Result<ExitStatus> {
         // TODO(jml): This function has potential for internal parallelism.
         // Better understand how join! and .await work and see if there's any benefit.
         let base_directory = destination_dir.join(source_file.file_name());
@@ -97,8 +125,7 @@ impl Each {
 
         let mut command = runner.get_command(source_file).await?;
         let mut child_process = command.stdout(out_file).stderr(err_file).spawn()?;
-        child_process.wait().await?;
-        Ok(())
+        child_process.wait().await
     }
 }
 

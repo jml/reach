@@ -9,7 +9,9 @@ edition = "2018"
 [dependencies]
 async-trait = "0.1.52"
 clap = "3.0.0-beta.2"
+console = "0.15.0"
 futures = "0.3"
+indicatif = "0.16.2"
 num_cpus = "1.0"
 tokio = { version = "1", features = [ "full" ] }
 tokio-stream = { version = "0.1", features = [ "fs" ] }
