@@ -89,7 +89,9 @@ dependencies = [
  "encode_unicode",
  "libc",
  "once_cell",
+ "regex",
  "terminal_size",
+ "unicode-width",
  "winapi",
 ]
 
@@ -451,6 +453,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "clap",
+ "console",
  "futures",
  "indicatif",
  "num_cpus",
