@@ -1,4 +1,4 @@
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::io;
 use std::process::ExitStatus;
 
@@ -18,7 +18,6 @@ impl Progress for ProgressBar {
 
     fn task_completed(&self, result: io::Result<ExitStatus>) {
         // TODO(jml): Actually use `result` to communicate whether the run succeeded.
-        // TODO(jml): Add some styling to get more useful progress information.
         match result {
             Ok(_) => self.inc(1),
             Err(e) => {
@@ -36,5 +35,8 @@ impl Progress for () {
 
 /// Construct a real progress bar for rendering to users.
 pub fn default_progress_bar() -> impl Progress {
-    ProgressBar::new(0)
+    ProgressBar::new(0).with_style(
+        ProgressStyle::default_bar()
+            .template("{prefix}{wide_bar} {pos}/{len} [{elapsed}<{eta}, {per_sec}]"),
+    )
 }
