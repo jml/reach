@@ -53,12 +53,15 @@ where
 async fn test_stdin_empty() -> io::Result<()> {
     let source = tempfile::tempdir()?;
     let destination = tempfile::tempdir()?;
-    reach::run(new_test_config(
-        "cat",
-        source.path(),
-        destination.path(),
-        reach::InputMode::Stdin,
-    ))
+    reach::run(
+        new_test_config(
+            "cat",
+            source.path(),
+            destination.path(),
+            reach::InputMode::Stdin,
+        ),
+        (),
+    )
     .await
 }
 
@@ -76,12 +79,15 @@ async fn test_stdin() -> io::Result<()> {
     ])?;
 
     let destination = tempfile::tempdir()?;
-    reach::run(new_test_config(
-        "cat",
-        source.path(),
-        destination.path(),
-        reach::InputMode::Stdin,
-    ))
+    reach::run(
+        new_test_config(
+            "cat",
+            source.path(),
+            destination.path(),
+            reach::InputMode::Stdin,
+        ),
+        (),
+    )
     .await?;
 
     let destination_path = destination.path();
@@ -126,12 +132,15 @@ async fn test_filename() -> io::Result<()> {
     ])?;
 
     let destination = tempfile::tempdir()?;
-    reach::run(new_test_config(
-        "echo -n {}",
-        source.path(),
-        destination.path(),
-        reach::InputMode::Filename,
-    ))
+    reach::run(
+        new_test_config(
+            "echo -n {}",
+            source.path(),
+            destination.path(),
+            reach::InputMode::Filename,
+        ),
+        (),
+    )
     .await?;
 
     let destination_path = destination.path();

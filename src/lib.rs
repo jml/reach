@@ -1,14 +1,16 @@
 use async_trait::async_trait;
 use futures::stream;
-use indicatif::ProgressBar;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 use std::process::ExitStatus;
 use std::str::FromStr;
 use tokio::fs;
 use tokio::process::Command;
 use tokio_stream::wrappers::ReadDirStream;
+
+mod progress;
+
+pub use progress::default_progress_bar;
 
 /// Configuration for Each.
 pub struct Config {
@@ -22,7 +24,7 @@ pub struct Config {
     pub retries: u32,
 }
 
-pub async fn run(config: Config) -> io::Result<()> {
+pub async fn run(config: Config, progress_bar: impl progress::Progress) -> io::Result<()> {
     let each = Each::new(
         config.source_dir,
         config.num_processes,
@@ -34,11 +36,13 @@ pub async fn run(config: Config) -> io::Result<()> {
     match config.input_mode {
         InputMode::Stdin => {
             let runner = StdinRunner::new(config.shell, config.command);
-            each.run(&runner, &config.destination_dir).await
+            each.run(&runner, &config.destination_dir, &progress_bar)
+                .await
         }
         InputMode::Filename => {
             let runner = FilenameRunner::new(config.shell, config.command);
-            each.run(&runner, &config.destination_dir).await
+            each.run(&runner, &config.destination_dir, &progress_bar)
+                .await
         }
     }
 }
@@ -80,26 +84,21 @@ impl Each {
             .await
     }
 
-    async fn run<R: Runner>(&self, runner: &R, destination_dir: &Path) -> io::Result<()> {
+    async fn run<R: Runner, P: progress::Progress>(
+        &self,
+        runner: &R,
+        destination_dir: &Path,
+        progress_bar: &P,
+    ) -> io::Result<()> {
         use stream::StreamExt;
         let source_files = self.load_files().await?;
-        let progress_bar = ProgressBar::new(source_files.len() as u64);
-        let progress_bar = Pin::new(&progress_bar);
+        progress_bar.set_num_tasks(source_files.len());
         stream::iter(source_files.into_iter())
             .for_each_concurrent(self.num_processes, |source_file| async move {
                 let result = self
                     .run_command(runner, &source_file, destination_dir)
                     .await;
-                // TODO(jml): Actually use `result` to communicate whether the run succeeded.
-                // TODO(jml): Add some styling to get more useful progress information.
-                // TODO(jml): Hide or suppress the progress bar in tests.
-                match result {
-                    Ok(_) => progress_bar.inc(1),
-                    Err(e) => {
-                        progress_bar.println(format!("Error: {:?}", e));
-                        progress_bar.inc(1);
-                    }
-                }
+                progress_bar.task_completed(result);
             })
             .await;
         Ok(())

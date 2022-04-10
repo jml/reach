@@ -135,5 +135,6 @@ fn ensure_destination_directory(destination: PathBuf) -> Result<PathBuf, clap::E
 async fn main() -> Result<(), io::Error> {
     let opts: Opts = Opts::parse();
     let config = parse_options(opts).unwrap_or_else(|err| err.exit());
-    reach::run(config).await
+    let progress_bar = reach::default_progress_bar();
+    reach::run(config, progress_bar).await
 }
