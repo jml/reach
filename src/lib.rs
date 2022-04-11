@@ -113,16 +113,17 @@ impl Each {
         // TODO(jml): This function has potential for internal parallelism.
         // Better understand how join! and .await work and see if there's any benefit.
         let base_directory = destination_dir.join(source_file.file_name());
-
         ensure_directory(&base_directory).await?;
 
-        let out_path = base_directory.join("out");
         // TODO(jml): 'create' truncates. Actual desired behaviour depends on 'recreate' setting.
-        let out_file = fs::File::create(out_path).await?.into_std().await;
-
-        let err_path = base_directory.join("err");
-        let err_file = fs::File::create(err_path).await?.into_std().await;
-
+        let out_file = fs::File::create(base_directory.join("out"))
+            .await?
+            .into_std()
+            .await;
+        let err_file = fs::File::create(base_directory.join("err"))
+            .await?
+            .into_std()
+            .await;
         let mut command = runner.get_command(source_file).await?;
         let mut child_process = command.stdout(out_file).stderr(err_file).spawn()?;
         child_process.wait().await
