@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use futures::stream;
+use futures::{join, stream};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitStatus;
@@ -110,20 +110,20 @@ impl Each {
         source_file: &fs::DirEntry,
         destination_dir: &Path,
     ) -> io::Result<ExitStatus> {
-        // TODO(jml): This function has potential for internal parallelism.
-        // Better understand how join! and .await work and see if there's any benefit.
         let base_directory = destination_dir.join(source_file.file_name());
-
         ensure_directory(&base_directory).await?;
 
-        let out_path = base_directory.join("out");
         // TODO(jml): 'create' truncates. Actual desired behaviour depends on 'recreate' setting.
-        let out_file = fs::File::create(out_path).await?.into_std().await;
-
-        let err_path = base_directory.join("err");
-        let err_file = fs::File::create(err_path).await?.into_std().await;
-
-        let mut command = runner.get_command(source_file).await?;
+        let (out_file, err_file, command) = join!(
+            fs::File::create(base_directory.join("out"))
+                .await?
+                .into_std(),
+            fs::File::create(base_directory.join("err"))
+                .await?
+                .into_std(),
+            runner.get_command(source_file),
+        );
+        let mut command = command?;
         let mut child_process = command.stdout(out_file).stderr(err_file).spawn()?;
         child_process.wait().await
     }
